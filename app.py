@@ -1,118 +1,208 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import mysql.connector
+import psycopg2
+import os
+import bcrypt
+import jwt
+from functools import wraps
+from dotenv import load_dotenv
 from email.message import EmailMessage
 import smtplib
-import os
-from dotenv import load_dotenv
+from datetime import datetime, timedelta
 
-# load .env variables
+# ---------------- LOAD ENV ----------------
 load_dotenv()
-
 app = Flask(__name__)
 CORS(app)
 
-# ================= DATABASE CONFIG =================
-db = mysql.connector.connect(
-    host=os.environ.get("DB_HOST"),
-    user=os.environ.get("DB_USER"),
-    password=os.environ.get("DB_PASSWORD"),
-    database=os.environ.get("DB_NAME")
-)
-cursor = db.cursor(dictionary=True)
+# ---------------- ENV ----------------
+DATABASE_URL = os.getenv("DATABASE_URL")
+CLUB_EMAIL = os.getenv("CLUB_EMAIL")
+EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
+JWT_SECRET = os.getenv("JWT_SECRET")
+PORT = int(os.getenv("PORT", 5000))
 
-# ================= EMAIL CONFIG =================
-CLUB_EMAIL = os.environ.get("CLUB_EMAIL")
-EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD")
+# ---------------- DB ----------------
+def get_db():
+    return psycopg2.connect(DATABASE_URL, sslmode="require")
 
-# ================= TEST =================
-@app.route("/", methods=["GET"])
+# ---------------- ADMIN AUTH MIDDLEWARE ----------------
+def admin_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        auth = request.headers.get("Authorization")
+        if not auth:
+            return jsonify({"error": "Token missing"}), 401
+        try:
+            token = auth.split(" ")[1]
+            jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        except:
+            return jsonify({"error": "Invalid token"}), 401
+        return f(*args, **kwargs)
+    return wrapper
+
+# ---------------- HEALTH ----------------
+@app.route("/")
 def home():
-    return jsonify({"status": "ADAS Club API running"})
+    return {"status": "ADAS Club API running"}
 
-# ================= PRESIDENT =================
+# ---------------- TEST DB ----------------
+@app.route("/test-db")
+def test_db():
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM president1")
+        count = cur.fetchone()[0]
+        cur.close()
+        conn.close()
+        return {"status": "success", "president_count": count}
+    except Exception as e:
+        return {"error": str(e)}, 500
+
+# ======================================================
+# 🔐 ADMIN AUTH
+# ======================================================
+@app.route("/admin/login", methods=["POST"])
+def admin_login():
+    data = request.json
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT password_hash FROM admin_users WHERE username=%s", (data["username"],))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+
+    if not row or not bcrypt.checkpw(data["password"].encode(), row[0].encode()):
+        return {"error": "Invalid credentials"}, 401
+
+    token = jwt.encode(
+        {"user": data["username"], "exp": datetime.utcnow() + timedelta(hours=6)},
+        JWT_SECRET,
+        algorithm="HS256"
+    )
+    return {"token": token}
+
+# ======================================================
+# 👑 PRESIDENT
+# ======================================================
 @app.route("/president", methods=["GET"])
 def get_president():
-    cursor.execute("""
-        SELECT id, name, year, photo_url
-        FROM president1
-        WHERE active = true
-    """)
-    return jsonify(cursor.fetchone())
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT id, name, year, photo_url FROM president1 ORDER BY id DESC LIMIT 1")
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return {} if not row else {
+        "id": row[0],
+        "name": row[1],
+        "year": row[2],
+        "photo_url": row[3]
+    }
 
-@app.route("/president", methods=["POST"])
+@app.route("/admin/president", methods=["POST"])
+@admin_required
 def add_president():
     data = request.json
-    cursor.execute("""
-        INSERT INTO president1 (name, year, photo_url, active)
-        VALUES (%s, %s, %s, true)
-    """, (data["name"], data["year"], data["photo_url"]))
-    db.commit()
-    return jsonify({"message": "President added"}), 201
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO president1 (name, year, photo_url) VALUES (%s,%s,%s)",
+        (data["name"], data["year"], data["photo_url"])
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+    return {"message": "President added"}
 
-# ================= MEMBERS =================
+# ======================================================
+# 👥 MEMBERS
+# ======================================================
 @app.route("/members", methods=["GET"])
 def get_members():
-    cursor.execute("""
-        SELECT cm.id, cm.name, cm.role, cm.photo_url,
-               p.name AS president_name
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT cm.id, cm.name, cm.role, cm.photo_url, p.name
         FROM club_members1 cm
         LEFT JOIN president1 p ON cm.president_id = p.id
     """)
-    return jsonify(cursor.fetchall())
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return [{
+        "id": r[0],
+        "name": r[1],
+        "role": r[2],
+        "photo_url": r[3],
+        "president": r[4]
+    } for r in rows]
 
-@app.route("/members", methods=["POST"])
+@app.route("/admin/members", methods=["POST"])
+@admin_required
 def add_member():
-    try:
-        data = request.json
-        print("DATA RECEIVED:", data)   # 👈 DEBUG
+    data = request.json
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO club_members1 (name, role, photo_url, president_id) VALUES (%s,%s,%s,%s)",
+        (data["name"], data["role"], data["photo_url"], data["president_id"])
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+    return {"message": "Member added"}
 
-        cursor.execute("""
-            INSERT INTO club_members1 (name, role, photo_url, president_id)
-            VALUES (%s, %s, %s, %s)
-        """, (
-            data["name"],
-            data["role"],
-            data["photo_url"],
-            data.get("president1_id")
-        ))
-
-        db.commit()
-        return jsonify({"message": "Member added"}), 201
-
-    except Exception as e:
-        print("ERROR:", e)   # 👈 REAL ERROR
-        return jsonify({"error": str(e)}), 500
-
-# ================= EVENTS =================
+# ======================================================
+# 📅 EVENTS
+# ======================================================
 @app.route("/events", methods=["GET"])
 def get_events():
-    cursor.execute("""
-        SELECT id, title, description, event_date, gform_link
-        FROM events_new
-        ORDER BY event_date DESC
-    """)
-    return jsonify(cursor.fetchall())
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT id, title, categories , event_date, gform_link FROM events ORDER BY event_date DESC")
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return [{
+        "id": r[0],
+        "title": r[1],
+        "description": r[2],
+        "event_date": r[3],
+        "gform_link": r[4]
+    } for r in rows]
 
-@app.route("/events", methods=["POST"])
+@app.route("/admin/events", methods=["POST"])
+@admin_required
 def add_event():
     data = request.json
-    cursor.execute("""
-        INSERT INTO events_new (title, description, event_date, gform_link)
-        VALUES (%s, %s, %s, %s)
-    """, (
-        data["title"],
-        data["description"],
-        data["event_date"],
-        data["gform_link"]
-    ))
-    db.commit()
-    return jsonify({"message": "Event added"}), 201
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO events (title, categories, event_date, gform_link) VALUES (%s,%s,%s,%s)",
+        (data["title"], data["categories"], data["event_date"], data["gform_link"])
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+    return {"message": "Event added"}
 
-# ================= CONTACT =================
+# ======================================================
+# ✉️ CONTACT
+# ======================================================
 @app.route("/contact", methods=["POST"])
 def contact():
     data = request.json
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO messages (name, email, message, created_at) VALUES (%s,%s,%s,%s)",
+        (data["name"], data["email"], data["message"], datetime.now())
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
 
     msg = EmailMessage()
     msg["Subject"] = "New Contact Message - ADAS Club"
@@ -120,20 +210,18 @@ def contact():
     msg["To"] = CLUB_EMAIL
     msg["Reply-To"] = data["email"]
     msg.set_content(f"""
-Name: {data["name"]}
-Email: {data["email"]}
-
+Name: {data['name']}
+Email: {data['email']}
 Message:
-{data["message"]}
+{data['message']}
 """)
 
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(CLUB_EMAIL, EMAIL_PASSWORD)
         server.send_message(msg)
 
-    return jsonify({"message": "Message sent"}), 200
+    return {"message": "Message sent"}
 
-# ================= RUN =================
+# ---------------- RUN ----------------
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=PORT, debug=True)
