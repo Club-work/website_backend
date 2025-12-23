@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from email.message import EmailMessage
 from datetime import datetime, timedelta
 import resend
-from flask import request
+
 
 # ---------------- LOAD ENV ----------------
 load_dotenv()
@@ -235,7 +235,8 @@ def contact():
         """
     })
 
-    return {"message": "Message sent successfully"}    except Exception as e:
+    return {"message": "Message sent successfully"}    
+    except Exception as e:
         print("ERROR:", e)
         return {"error": str(e)}, 500
 
