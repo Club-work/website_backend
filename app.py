@@ -83,6 +83,21 @@ def admin_login():
     )
     return {"token": token}
 
+def admin_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        auth = request.headers.get("Authorization")
+        if not auth:
+            return jsonify({"error": "Token missing"}), 401
+        try:
+            token = auth.split(" ")[1]
+            jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        except Exception as e:
+            return jsonify({"error": str(e)}), 401
+        return f(*args, **kwargs)
+    return wrapper
+
+
 # ======================================================
 # 👑 PRESIDENT
 # ======================================================
