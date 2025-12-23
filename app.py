@@ -210,7 +210,9 @@ def add_event():
 @app.route("/contact", methods=["POST"])
 def contact():
     try:
-        data = request.json
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Invalid JSON"}), 400
 
         # Save to DB
         conn = get_db()
@@ -224,7 +226,7 @@ def contact():
         conn.close()
 
         # Send email
-        resend.Emails.send({
+        response = resend.Emails.send({
             "from": "ADAS Club <onboarding@resend.dev>",
             "to": CLUB_EMAIL,
             "reply_to": data["email"],
@@ -235,9 +237,15 @@ def contact():
             <p><b>Message:</b><br>{data['message']}</p>
             """
         })
+
+        print("RESEND RESPONSE:", response)
+
+        return jsonify({"message": "Contact message sent successfully"}), 200
+
     except Exception as e:
         print("CONTACT ERROR:", e)
         return jsonify({"error": "Something went wrong"}), 500
+
 # ---------------- RUN ----------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=PORT, debug=True)
