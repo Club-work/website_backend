@@ -210,6 +210,7 @@ def add_event():
 def contact():
     try:
         data = request.json
+        print("DATA:", data)
 
         conn = get_db()
         cur = conn.cursor()
@@ -235,6 +236,7 @@ def contact():
         return {"message": "Message sent"}
 
     except Exception as e:
+        print("ERROR:", e)
         return {"error": str(e)}, 500
 
 # ---------------- RUN ----------------
