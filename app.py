@@ -66,23 +66,42 @@ def test_db():
 # ======================================================
 @app.route("/admin/login", methods=["POST"])
 def admin_login():
-    data = request.json
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT password_hash FROM admin_users WHERE username=%s", (data["username"],))
-    row = cur.fetchone()
-    cur.close()
-    conn.close()
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Invalid JSON"}), 400
 
-    if not row or not bcrypt.checkpw(data["password"].encode(), row[0].encode()):
-        return {"error": "Invalid credentials"}, 401
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT password_hash FROM admin_users WHERE username=%s",
+            (data["username"],)
+        )
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
 
-    token = jwt.encode(
-        {"user": data["username"], "exp": datetime.utcnow() + timedelta(hours=6)},
-        JWT_SECRET,
-        algorithm="HS256"
-    )
-    return {"token": token}
+        if not row:
+            return jsonify({"error": "Invalid credentials"}), 401
+
+        # IMPORTANT FIX HERE 👇
+        if not bcrypt.checkpw(
+            data["password"].encode("utf-8"),
+            row[0].encode("utf-8") if isinstance(row[0], str) else row[0]
+        ):
+            return jsonify({"error": "Invalid credentials"}), 401
+
+        token = jwt.encode(
+            {"user": data["username"], "exp": datetime.utcnow() + timedelta(hours=6)},
+            JWT_SECRET,
+            algorithm="HS256"
+        )
+
+        return jsonify({"token": token}), 200
+
+    except Exception as e:
+        print("ADMIN LOGIN ERROR:", e)
+        return jsonify({"error": "Something went wrong"}), 500
 
 def admin_required(f):
     @wraps(f)
