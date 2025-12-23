@@ -7,8 +7,9 @@ import jwt
 from functools import wraps
 from dotenv import load_dotenv
 from email.message import EmailMessage
-import smtplib
 from datetime import datetime, timedelta
+import resend
+from flask import request
 
 # ---------------- LOAD ENV ----------------
 load_dotenv()
@@ -18,7 +19,7 @@ CORS(app)
 # ---------------- ENV ----------------
 DATABASE_URL = os.getenv("DATABASE_URL")
 CLUB_EMAIL = os.getenv("CLUB_EMAIL")
-EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
+resend.api_key = os.getenv("RESEND_API_KEY")
 JWT_SECRET = os.getenv("JWT_SECRET")
 PORT = int(os.getenv("PORT", 5000))
 
@@ -208,34 +209,33 @@ def add_event():
 # ======================================================
 @app.route("/contact", methods=["POST"])
 def contact():
-    try:
-        data = request.json
-        print("DATA:", data)
+    data = request.json
 
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute(
-            "INSERT INTO messages (name, email, message, created_at) VALUES (%s,%s,%s,%s)",
-            (data["name"], data["email"], data["message"], datetime.now())
-        )
-        conn.commit()
-        cur.close()
-        conn.close()
+    # DB save (same as before)
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO messages (name, email, message, created_at) VALUES (%s,%s,%s,%s)",
+        (data["name"], data["email"], data["message"], datetime.now())
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
 
-        msg = EmailMessage()
-        msg["Subject"] = "New Contact Message - ADAS Club"
-        msg["From"] = CLUB_EMAIL
-        msg["To"] = CLUB_EMAIL
-        msg["Reply-To"] = data["email"]
-        msg.set_content(data["message"])
+    # Email send (API based)
+    resend.Emails.send({
+        "from": f"ADAS Club <onboarding@resend.dev>",
+        "to": CLUB_EMAIL,
+        "reply_to": data["email"],
+        "subject": "New Contact Message - ADAS Club",
+        "html": f"""
+        <p><b>Name:</b> {data['name']}</p>
+        <p><b>Email:</b> {data['email']}</p>
+        <p><b>Message:</b><br>{data['message']}</p>
+        """
+    })
 
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(CLUB_EMAIL, EMAIL_PASSWORD)
-            server.send_message(msg)
-
-        return {"message": "Message sent"}
-
-    except Exception as e:
+    return {"message": "Message sent successfully"}    except Exception as e:
         print("ERROR:", e)
         return {"error": str(e)}, 500
 
