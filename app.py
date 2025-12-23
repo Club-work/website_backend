@@ -209,37 +209,35 @@ def add_event():
 # ======================================================
 @app.route("/contact", methods=["POST"])
 def contact():
-    data = request.json
+    try:
+        data = request.json
 
-    # DB save (same as before)
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute(
-        "INSERT INTO messages (name, email, message, created_at) VALUES (%s,%s,%s,%s)",
-        (data["name"], data["email"], data["message"], datetime.now())
-    )
-    conn.commit()
-    cur.close()
-    conn.close()
+        # Save to DB
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO messages (name, email, message, created_at) VALUES (%s,%s,%s,%s)",
+            (data["name"], data["email"], data["message"], datetime.now())
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
 
-    # Email send (API based)
-    resend.Emails.send({
-        "from": f"ADAS Club <onboarding@resend.dev>",
-        "to": CLUB_EMAIL,
-        "reply_to": data["email"],
-        "subject": "New Contact Message - ADAS Club",
-        "html": f"""
-        <p><b>Name:</b> {data['name']}</p>
-        <p><b>Email:</b> {data['email']}</p>
-        <p><b>Message:</b><br>{data['message']}</p>
-        """
-    })
-
-    return {"message": "Message sent successfully"}    
+        # Send email
+        resend.Emails.send({
+            "from": "ADAS Club <onboarding@resend.dev>",
+            "to": CLUB_EMAIL,
+            "reply_to": data["email"],
+            "subject": "New Contact Message - ADAS Club",
+            "html": f"""
+            <p><b>Name:</b> {data['name']}</p>
+            <p><b>Email:</b> {data['email']}</p>
+            <p><b>Message:</b><br>{data['message']}</p>
+            """
+        })
     except Exception as e:
-        print("ERROR:", e)
-        return {"error": str(e)}, 500
-
+        print("CONTACT ERROR:", e)
+        return jsonify({"error": "Something went wrong"}), 500
 # ---------------- RUN ----------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=PORT, debug=True)
