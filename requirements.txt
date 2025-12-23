@@ -6,6 +6,6 @@ bcrypt
 pyjwt
 gunicorn
 resend
-resend==1.x.x
+resend==0.6.0
 
 
