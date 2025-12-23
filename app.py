@@ -208,34 +208,34 @@ def add_event():
 # ======================================================
 @app.route("/contact", methods=["POST"])
 def contact():
-    data = request.json
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute(
-        "INSERT INTO messages (name, email, message, created_at) VALUES (%s,%s,%s,%s)",
-        (data["name"], data["email"], data["message"], datetime.now())
-    )
-    conn.commit()
-    cur.close()
-    conn.close()
+    try:
+        data = request.json
 
-    msg = EmailMessage()
-    msg["Subject"] = "New Contact Message - ADAS Club"
-    msg["From"] = CLUB_EMAIL
-    msg["To"] = CLUB_EMAIL
-    msg["Reply-To"] = data["email"]
-    msg.set_content(f"""
-Name: {data['name']}
-Email: {data['email']}
-Message:
-{data['message']}
-""")
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO messages (name, email, message, created_at) VALUES (%s,%s,%s,%s)",
+            (data["name"], data["email"], data["message"], datetime.now())
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
 
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-        server.login(CLUB_EMAIL, EMAIL_PASSWORD)
-        server.send_message(msg)
+        msg = EmailMessage()
+        msg["Subject"] = "New Contact Message - ADAS Club"
+        msg["From"] = CLUB_EMAIL
+        msg["To"] = CLUB_EMAIL
+        msg["Reply-To"] = data["email"]
+        msg.set_content(data["message"])
 
-    return {"message": "Message sent"}
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(CLUB_EMAIL, EMAIL_PASSWORD)
+            server.send_message(msg)
+
+        return {"message": "Message sent"}
+
+    except Exception as e:
+        return {"error": str(e)}, 500
 
 # ---------------- RUN ----------------
 if __name__ == "__main__":
