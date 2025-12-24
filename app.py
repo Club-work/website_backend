@@ -56,37 +56,48 @@ def home():
 # =====================================================
 @app.route("/admin/login", methods=["POST"])
 def admin_login():
-    data = request.json
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Invalid JSON"}), 400
 
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute(
-        "SELECT password_hash FROM admin_users WHERE username=%s",
-        (data["username"],)
-    )
-    row = cur.fetchone()
-    cur.close()
-    conn.close()
+        if "username" not in data or "password" not in data:
+            return jsonify({"error": "Username & password required"}), 400
 
-    if not row:
-        return {"error": "Invalid credentials"}, 401
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT password_hash FROM admin_users WHERE username=%s",
+            (data["username"],)
+        )
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
 
-    if not bcrypt.checkpw(
-        data["password"].encode("utf-8"),
-        row[0].encode("utf-8") if isinstance(row[0], str) else row[0]
-    ):
-        return {"error": "Invalid credentials"}, 401
+        if not row:
+            return jsonify({"error": "Invalid credentials"}), 401
 
-    token = jwt.encode(
-        {
-            "user": data["username"],
-            "exp": datetime.utcnow() + timedelta(hours=6)
-        },
-        JWT_SECRET,
-        algorithm="HS256"
-    )
+        stored_hash = row[0]
+        if isinstance(stored_hash, str):
+            stored_hash = stored_hash.encode("utf-8")
 
-    return {"token": token}
+        if not bcrypt.checkpw(data["password"].encode("utf-8"), stored_hash):
+            return jsonify({"error": "Invalid credentials"}), 401
+
+        token = jwt.encode(
+            {
+                "user": data["username"],
+                "exp": datetime.utcnow() + timedelta(hours=6)
+            },
+            JWT_SECRET,
+            algorithm="HS256"
+        )
+
+        return jsonify({"token": token}), 200
+
+    except Exception as e:
+        print("ADMIN LOGIN ERROR:", e)
+        return jsonify({"error": str(e)}), 500
 
 # =====================================================
 # PRESIDENT CRUD
