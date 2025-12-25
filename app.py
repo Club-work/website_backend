@@ -256,17 +256,25 @@ def delete_member(id):
 def get_events():
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT id, title, categories, details , gform_link FROM events")
+    cur.execute("""
+    SELECT id, title, categories, details, gform_link,
+           registration_open, registration_close_at
+    FROM events
+""")
     rows = cur.fetchall()
     cur.close()
     conn.close()
     return [{
-        "id": r[0],
-        "title": r[1],
-        "categories": r[2],
-        "details":r[3],
-        "gform_link": r[4]        
-    } for r in rows]
+    "id": r[0],
+    "title": r[1],
+    "categories": r[2],
+    "details": r[3],
+    "gform_link": r[4],
+    "registration_open": (
+        r[5] and (r[6] is None or r[6] > datetime.now())
+    )
+} for r in rows]
+
 @app.route("/admin/events", methods=["POST"])
 @admin_required
 def add_event():
@@ -274,14 +282,17 @@ def add_event():
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
-        INSERT INTO events (title, categories, details, gform_link)
-        VALUES (%s,%s,%s,%s)
+        INSERT INTO events
+(title, categories, details, gform_link, registration_open, registration_close_at)
+VALUES (%s,%s,%s,%s,%s,%s)
     """, (
-        data["title"],
-        data["categories"],
-        data["details"],
-        data["gform_link"]
-    ))
+ data["title"],
+ data["categories"],
+ data["details"],
+ data["gform_link"],
+ data.get("registration_open", False),
+ data.get("registration_close_at")
+))
     conn.commit()
     cur.close()
     conn.close()
@@ -294,9 +305,15 @@ def update_event(id):
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
-        UPDATE events
-        SET title=%s, categories=%s, details=%s, gform_link=%s
-        WHERE id=%s
+ UPDATE events
+SET title=%s,
+    categories=%s,
+    details=%s,
+    gform_link=%s,
+    registration_open=%s,
+    registration_close_at=%s
+WHERE id=%s
+
     """, (
         data["title"],
         data["categories"],
