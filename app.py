@@ -264,9 +264,9 @@ def get_events():
         "id": r[0],
         "title": r[1],
         "categories": r[2],
-        "details":r[5],
-        "event_date": r[3],
-        "gform_link": r[4]        
+        "details":r[3],
+        "event_date": r[4],
+        "gform_link": r[5]        
     } for r in rows]
 @app.route("/admin/events", methods=["POST"])
 @admin_required
