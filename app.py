@@ -256,7 +256,7 @@ def delete_member(id):
 def get_events():
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT id, title, categories, details , event_date, gform_link FROM events ORDER BY event_date DESC")
+    cur.execute("SELECT id, title, categories, details , gform_link FROM events ORDER BY event_date DESC")
     rows = cur.fetchall()
     cur.close()
     conn.close()
@@ -275,13 +275,12 @@ def add_event():
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
-        INSERT INTO events (title, categories, details, event_date, gform_link)
+        INSERT INTO events (title, categories, details, gform_link)
         VALUES (%s,%s,%s,%s,%s)
     """, (
         data["title"],
         data["categories"],
         data["details"],
-        data["event_date"],
         data["gform_link"]
     ))
     conn.commit()
@@ -297,13 +296,12 @@ def update_event(id):
     cur = conn.cursor()
     cur.execute("""
         UPDATE events
-        SET title=%s, categories=%s, details=%s, event_date=%s, gform_link=%s
+        SET title=%s, categories=%s, details=%s, gform_link=%s
         WHERE id=%s
     """, (
         data["title"],
         data["categories"],
         data["details"],
-        data["event_date"],
         data["gform_link"],
         id
     ))
