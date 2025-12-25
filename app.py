@@ -275,7 +275,7 @@ def add_event():
     cur = conn.cursor()
     cur.execute("""
         INSERT INTO events (title, categories, details, gform_link)
-        VALUES (%s,%s,%s,%s,%s)
+        VALUES (%s,%s,%s,%s)
     """, (
         data["title"],
         data["categories"],
