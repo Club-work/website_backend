@@ -256,7 +256,7 @@ def delete_member(id):
 def get_events():
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT id, title, categories, details , gform_link FROM events ORDER BY event_date DESC")
+    cur.execute("SELECT id, title, categories, details , gform_link FROM events")
     rows = cur.fetchall()
     cur.close()
     conn.close()
