@@ -258,7 +258,7 @@ def get_events():
     cur = conn.cursor()
     cur.execute("""
     SELECT id, title, categories, details, gform_link,
-           registration_open, registration_close_at
+           registration_open, registration_end
     FROM events
 """)
     rows = cur.fetchall()
@@ -283,7 +283,7 @@ def add_event():
     cur = conn.cursor()
     cur.execute("""
         INSERT INTO events
-(title, categories, details, gform_link, registration_open, registration_close_at)
+(title, categories, details, gform_link, registration_open, registration_end)
 VALUES (%s,%s,%s,%s,%s,%s)
     """, (
  data["title"],
@@ -291,7 +291,7 @@ VALUES (%s,%s,%s,%s,%s,%s)
  data["details"],
  data["gform_link"],
  data.get("registration_open", False),
- data.get("registration_close_at")
+ data.get("registration_end")
 ))
     conn.commit()
     cur.close()
@@ -311,7 +311,7 @@ SET title=%s,
     details=%s,
     gform_link=%s,
     registration_open=%s,
-    registration_close_at=%s
+    registration_end=%s
 WHERE id=%s
 
     """, (
