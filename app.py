@@ -186,19 +186,24 @@ def get_members():
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
-        SELECT cm.id, cm.name, cm.role, cm.photo_url, p.name
+        SELECT 
+            cm.name,
+            cm.role,
+            cm.photo_url,
+            p.name AS president_name
         FROM club_members1 cm
         LEFT JOIN president1 p ON cm.president_id = p.id
+        ORDER BY p.id DESC
     """)
     rows = cur.fetchall()
     cur.close()
     conn.close()
+
     return [{
-        "id": r[0],
-        "name": r[1],
-        "role": r[2],
-        "photo_url": r[3],
-        "president": r[4]
+        "name": r[0],
+        "role": r[1],
+        "photo_url": r[2],
+        "president": r[3]
     } for r in rows]
 
 @app.route("/admin/members", methods=["POST"])
@@ -257,23 +262,34 @@ def get_events():
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
-    SELECT id, title, categories, details, gform_link,
-           registration_open, registration_end
-    FROM events
-""")
+        SELECT 
+            title,
+            categories,
+            details,
+            gform_link,
+            registration_open,
+            registration_end
+        FROM events
+        ORDER BY created_at DESC
+    """)
     rows = cur.fetchall()
     cur.close()
     conn.close()
+
+    now = datetime.now()
+
     return [{
-    "id": r[0],
-    "title": r[1],
-    "categories": r[2],
-    "details": r[3],
-    "gform_link": r[4],
-    "registration_open": (
-        r[5] and (r[6] is None or r[6] > datetime.now())
-    )
-} for r in rows]
+        "title": r[0],
+        "categories": r[1],
+        "details": r[2],
+        "register": (
+            r[4] and r[3] is not None and
+            (r[5] is None or r[5] > now)
+        ),
+        "gform_link": r[3] if (
+            r[4] and (r[5] is None or r[5] > now)
+        ) else None
+    } for r in rows]
 
 @app.route("/admin/events", methods=["POST"])
 @admin_required
@@ -301,30 +317,53 @@ VALUES (%s,%s,%s,%s,%s,%s)
 @app.route("/admin/events/<int:id>", methods=["PUT"])
 @admin_required
 def update_event(id):
-    data = request.json
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Invalid JSON"}), 400
+
+    fields = []
+    values = []
+
+    if "title" in data:
+        fields.append("title=%s")
+        values.append(data["title"])
+
+    if "categories" in data:
+        fields.append("categories=%s")
+        values.append(data["categories"])
+
+    if "details" in data:
+        fields.append("details=%s")
+        values.append(data["details"])
+
+    if "gform_link" in data:
+        fields.append("gform_link=%s")
+        values.append(data["gform_link"])
+
+    if "registration_open" in data:
+        fields.append("registration_open=%s")
+        values.append(data["registration_open"])
+
+    if "registration_end" in data:
+        fields.append("registration_end=%s")
+        values.append(data["registration_end"])
+
+    if not fields:
+        return jsonify({"error": "No fields to update"}), 400
+
+    values.append(id)
+
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("""
- UPDATE events
-SET title=%s,
-    categories=%s,
-    details=%s,
-    gform_link=%s,
-    registration_open=%s,
-    registration_end=%s
-WHERE id=%s
-
-    """, (
-        data["title"],
-        data["categories"],
-        data["details"],
-        data["gform_link"],
-        id
-    ))
+    cur.execute(
+        f"UPDATE events SET {', '.join(fields)} WHERE id=%s",
+        tuple(values)
+    )
     conn.commit()
     cur.close()
     conn.close()
-    return {"message": "Event updated"}
+
+    return {"message": "Event updated successfully"}
 
 @app.route("/admin/events/<int:id>", methods=["DELETE"])
 @admin_required
