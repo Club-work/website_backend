@@ -123,13 +123,18 @@ def admin_required(f):
 # ======================================================
 @app.route("/president", methods=["GET"])
 def get_president():
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT  name, photo_url, year
-        FROM president
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT id, name, photo_url, year
+        FROM president1
         ORDER BY year DESC
     """)
-    rows = cursor.fetchall()
+
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
 
     result = []
     for row in rows:
@@ -141,6 +146,7 @@ def get_president():
         })
 
     return jsonify(result)
+
 
 
 @app.route("/admin/president", methods=["POST"])
