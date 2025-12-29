@@ -123,18 +123,25 @@ def admin_required(f):
 # ======================================================
 @app.route("/president", methods=["GET"])
 def get_president():
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT id, name, year, photo_url FROM president1 ORDER BY id DESC LIMIT 1")
-    row = cur.fetchall()
-    cur.close()
-    conn.close()
-    return {} if not row else {
-        "id":row[0],
-        "name": row[1],
-        "year": row[2],
-        "photo_url": row[3]
-    }
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT  name, photo_url, year
+        FROM president
+        ORDER BY year DESC
+    """)
+    rows = cursor.fetchall()
+
+    result = []
+    for row in rows:
+        result.append({
+            "id": row[0],
+            "name": row[1],
+            "photo_url": row[2],
+            "year": row[3]
+        })
+
+    return jsonify(result)
+
 
 @app.route("/admin/president", methods=["POST"])
 @admin_required
