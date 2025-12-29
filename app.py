@@ -126,7 +126,7 @@ def get_president():
     conn = get_db()
     cur = conn.cursor()
     cur.execute("SELECT id, name, year, photo_url FROM president1 ORDER BY id DESC LIMIT 1")
-    row = cur.fetchone()
+    row = cur.fetchall()
     cur.close()
     conn.close()
     return {} if not row else {
