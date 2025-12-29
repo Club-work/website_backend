@@ -130,6 +130,7 @@ def get_president():
     cur.close()
     conn.close()
     return {} if not row else {
+        "id":row[0],
         "name": row[1],
         "year": row[2],
         "photo_url": row[3]
