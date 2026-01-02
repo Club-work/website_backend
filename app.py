@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import psycopg2
+from psycopg2 import pool
 import os
 import bcrypt
 import jwt
@@ -12,7 +13,9 @@ import resend
 # ---------------- LOAD ENV ----------------
 load_dotenv()
 app = Flask(__name__)
-CORS(app)
+
+# CORS optimised
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 # ---------------- ENV ----------------
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -21,9 +24,19 @@ JWT_SECRET = os.getenv("JWT_SECRET")
 PORT = int(os.getenv("PORT", 5000))
 resend.api_key = os.getenv("RESEND_API_KEY")
 
-# ---------------- DB ----------------
+# ---------------- DB CONNECTION POOL ----------------
+db_pool = pool.SimpleConnectionPool(
+    1,
+    10,
+    DATABASE_URL,
+    sslmode="require"
+)
+
 def get_db():
-    return psycopg2.connect(DATABASE_URL, sslmode="require")
+    return db_pool.getconn()
+
+def release_db(conn):
+    db_pool.putconn(conn)
 
 # ---------------- ADMIN AUTH ----------------
 def admin_required(f):
@@ -45,6 +58,10 @@ def admin_required(f):
 def home():
     return {"status": "ADAS Club API running"}
 
+@app.route("/health")
+def health():
+    return {"status": "ok"}
+
 # ======================================================
 # 🔐 ADMIN LOGIN
 # ======================================================
@@ -59,6 +76,9 @@ def admin_login():
         (data["username"],)
     )
     row = cur.fetchone()
+
+    cur.close()
+    release_db(conn)
 
     if not row or not bcrypt.checkpw(
         data["password"].encode(),
@@ -83,11 +103,16 @@ def add_president():
     data = request.json
     conn = get_db()
     cur = conn.cursor()
+
     cur.execute(
         "INSERT INTO president1 (name, year, photo_url) VALUES (%s,%s,%s)",
         (data["name"], data["year"], data["photo_url"])
     )
     conn.commit()
+
+    cur.close()
+    release_db(conn)
+
     return {"message": "President added"}
 
 @app.route("/admin/president/<int:id>", methods=["PUT"])
@@ -96,11 +121,16 @@ def update_president(id):
     data = request.json
     conn = get_db()
     cur = conn.cursor()
+
     cur.execute(
         "UPDATE president1 SET name=%s, year=%s, photo_url=%s WHERE id=%s",
         (data["name"], data["year"], data["photo_url"], id)
     )
     conn.commit()
+
+    cur.close()
+    release_db(conn)
+
     return {"message": "President updated"}
 
 @app.route("/admin/president/<int:id>", methods=["DELETE"])
@@ -108,8 +138,13 @@ def update_president(id):
 def delete_president(id):
     conn = get_db()
     cur = conn.cursor()
+
     cur.execute("DELETE FROM president1 WHERE id=%s", (id,))
     conn.commit()
+
+    cur.close()
+    release_db(conn)
+
     return {"message": "President deleted"}
 
 # ======================================================
@@ -121,6 +156,7 @@ def add_member():
     data = request.json
     conn = get_db()
     cur = conn.cursor()
+
     cur.execute(
         """INSERT INTO club_members1
         (name, role, photo_url, president_id)
@@ -128,6 +164,10 @@ def add_member():
         (data["name"], data["role"], data["photo_url"], data["president_id"])
     )
     conn.commit()
+
+    cur.close()
+    release_db(conn)
+
     return {"message": "Member added"}
 
 @app.route("/admin/members/<int:id>", methods=["PUT"])
@@ -136,6 +176,7 @@ def update_member(id):
     data = request.json
     conn = get_db()
     cur = conn.cursor()
+
     cur.execute(
         """UPDATE club_members1
         SET name=%s, role=%s, photo_url=%s, president_id=%s
@@ -143,6 +184,10 @@ def update_member(id):
         (data["name"], data["role"], data["photo_url"], data["president_id"], id)
     )
     conn.commit()
+
+    cur.close()
+    release_db(conn)
+
     return {"message": "Member updated"}
 
 @app.route("/admin/members/<int:id>", methods=["DELETE"])
@@ -150,19 +195,23 @@ def update_member(id):
 def delete_member(id):
     conn = get_db()
     cur = conn.cursor()
+
     cur.execute("DELETE FROM club_members1 WHERE id=%s", (id,))
     conn.commit()
+
+    cur.close()
+    release_db(conn)
+
     return {"message": "Member deleted"}
 
 # ======================================================
-# ⭐ PRESIDENT + MEMBERS (PUBLIC GET) ⭐
+# ⭐ PRESIDENT + MEMBERS (PUBLIC GET)
 # ======================================================
 @app.route("/president-members", methods=["GET"])
 def president_members():
     conn = get_db()
     cur = conn.cursor()
 
-    # Get presidents
     cur.execute("""
         SELECT id, name, photo_url, year
         FROM president1
@@ -186,24 +235,24 @@ def president_members():
             "photo_url": p[2],
             "year": p[3],
             "members": [
-                {
-                    "id": m[0],
-                    "name": m[1],
-                    "role": m[2],
-                    "photo_url": m[3]
-                } for m in members
+                {"id": m[0], "name": m[1], "role": m[2], "photo_url": m[3]}
+                for m in members
             ]
         })
+
+    cur.close()
+    release_db(conn)
 
     return jsonify(result)
 
 # ======================================================
-# 📅 EVENTS (UNCHANGED)
+# 📅 EVENTS
 # ======================================================
 @app.route("/events", methods=["GET"])
 def get_events():
     conn = get_db()
     cur = conn.cursor()
+
     cur.execute("""
         SELECT title, categories, details, gform_link,
                registration_open, registration_end
@@ -211,6 +260,9 @@ def get_events():
         ORDER BY created_at DESC
     """)
     rows = cur.fetchall()
+
+    cur.close()
+    release_db(conn)
 
     now = datetime.now()
 
@@ -237,6 +289,9 @@ def contact():
     )
     conn.commit()
 
+    cur.close()
+    release_db(conn)
+
     resend.Emails.send({
         "from": "ADAS Club <onboarding@resend.dev>",
         "to": CLUB_EMAIL,
@@ -250,7 +305,3 @@ def contact():
     })
 
     return {"message": "Message sent"}
-
-# ---------------- RUN ----------------
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=PORT, debug=True)
