@@ -68,22 +68,25 @@ def health():
 @app.route("/admin/login", methods=["POST"])
 def admin_login():
     data = request.json
+
     conn = get_db()
     cur = conn.cursor()
-
     cur.execute(
         "SELECT password_hash FROM admin_users WHERE username=%s",
         (data["username"],)
     )
     row = cur.fetchone()
-
     cur.close()
     release_db(conn)
 
-    if not row or not bcrypt.checkpw(
-        data["password"].encode(),
-        row[0].encode() if isinstance(row[0], str) else row[0]
-    ):
+    if not row:
+        return jsonify({"error": "Invalid credentials"}), 401
+
+    stored_hash = row[0]
+    if isinstance(stored_hash, str):
+        stored_hash = stored_hash.encode()   # safety fallback
+
+    if not bcrypt.checkpw(data["password"].encode(), stored_hash):
         return jsonify({"error": "Invalid credentials"}), 401
 
     token = jwt.encode(
