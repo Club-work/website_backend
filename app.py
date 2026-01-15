@@ -242,6 +242,80 @@ def delete_event(id):
 # ======================================================
 # 👑 PRESIDENT (ADMIN CRUD)
 # ======================================================
+# ======================================================
+# 👥 PRESIDENT + MEMBERS (PUBLIC VIEW ONLY)
+# ======================================================
+@app.route("/president-members", methods=["GET"])
+def president_members_public():
+    conn = get_db()
+    cur = conn.cursor()
+
+    # Get presidents
+    cur.execute("""
+        SELECT id, name, year, photo_url
+        FROM president1
+        ORDER BY year DESC
+    """)
+    presidents = cur.fetchall()
+
+    result = []
+
+    for p in presidents:
+        cur.execute("""
+            SELECT id, name, role, photo_url
+            FROM club_members1
+            WHERE president_id = %s
+            ORDER BY id
+        """, (p[0],))
+
+        members = cur.fetchall()
+
+        result.append({
+            "id": p[0],
+            "name": p[1],
+            "year": p[2],
+            "photo_url": p[3],
+            "members": [
+                {
+                    "id": m[0],
+                    "name": m[1],
+                    "role": m[2],
+                    "photo_url": m[3]
+                }
+                for m in members
+            ]
+        })
+
+    cur.close()
+    release_db(conn)
+
+    return jsonify(result)
+
+@app.route("/admin/presidents", methods=["GET"])
+@admin_required
+def get_presidents_admin():
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT id, name, year, photo_url
+        FROM president1
+        ORDER BY year DESC
+    """)
+    rows = cur.fetchall()
+
+    cur.close()
+    release_db(conn)
+
+    return jsonify([
+        {
+            "id": r[0],
+            "name": r[1],
+            "year": r[2],
+            "photo_url": r[3]
+        } for r in rows
+    ])
+
 @app.route("/admin/president", methods=["POST"])
 @admin_required
 def add_president():
@@ -286,6 +360,31 @@ def delete_president(id):
 # ======================================================
 # 👥 MEMBERS (ADMIN CRUD)
 # ======================================================
+@app.route("/admin/members", methods=["GET"])
+@admin_required
+def get_members_admin():
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT id, name, role, photo_url, president_id
+        FROM club_members1
+        ORDER BY id DESC
+    """)
+    rows = cur.fetchall()
+
+    cur.close()
+    release_db(conn)
+
+    return jsonify([
+        {
+            "id": r[0],
+            "name": r[1],
+            "role": r[2],
+            "photo_url": r[3],
+            "president_id": r[4]
+        } for r in rows
+    ])
 @app.route("/admin/members", methods=["POST"])
 @admin_required
 def add_member():
