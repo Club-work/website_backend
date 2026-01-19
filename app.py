@@ -250,46 +250,55 @@ def president_members_public():
     conn = get_db()
     cur = conn.cursor()
 
-    # Get presidents
+    # 🔹 Single JOIN query (FAST & SAFE)
     cur.execute("""
-        SELECT id, name, year, photo_url
-        FROM president1
-        ORDER BY year DESC
+        SELECT
+            p.id            AS president_id,
+            p.name          AS president_name,
+            p.year          AS president_year,
+            p.photo_url     AS president_photo,
+
+            m.id            AS member_id,
+            m.name          AS member_name,
+            m.role          AS member_role,
+            m.photo_url     AS member_photo
+
+        FROM president1 p
+        LEFT JOIN club_members1 m
+            ON m.president_id = p.id
+
+        ORDER BY p.year DESC, m.id
     """)
-    presidents = cur.fetchall()
 
-    result = []
-
-    for p in presidents:
-        cur.execute("""
-            SELECT id, name, role, photo_url
-            FROM club_members1
-            WHERE president_id = %s
-            ORDER BY id
-        """, (p[0],))
-
-        members = cur.fetchall()
-
-        result.append({
-            "id": p[0],
-            "name": p[1],
-            "year": p[2],
-            "photo_url": p[3],
-            "members": [
-                {
-                    "id": m[0],
-                    "name": m[1],
-                    "role": m[2],
-                    "photo_url": m[3]
-                }
-                for m in members
-            ]
-        })
-
+    rows = cur.fetchall()
     cur.close()
-    release_db(conn)
+    conn.close()
 
-    return jsonify(result)
+    # 🔹 Group members under their president
+    result = {}
+    for r in rows:
+        pid = r[0]
+
+        if pid not in result:
+            result[pid] = {
+                "id": r[0],
+                "name": r[1],
+                "year": r[2],
+                "photo_url": r[3],
+                "members": []
+            }
+
+        # If member exists, attach to that president
+        if r[4] is not None:
+            result[pid]["members"].append({
+                "id": r[4],
+                "name": r[5],
+                "role": r[6],
+                "photo_url": r[7]
+            })
+
+    # Convert dict → list
+    return jsonify(list(result.values()))
 
 @app.route("/admin/presidents", methods=["GET"])
 @admin_required
