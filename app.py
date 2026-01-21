@@ -182,31 +182,45 @@ def president_members():
 # ======================================================
 @app.route("/contact", methods=["POST"])
 def contact():
-    data = request.json
+    try:
+        data = request.json
 
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute(
-        "INSERT INTO messages (name, email, message, created_at) VALUES (%s,%s,%s,%s)",
-        (data["name"], data["email"], data["message"], datetime.now())
-    )
-    conn.commit()
-    cur.close()
-    release_db(conn)
+        # 1️⃣ Save message in DB (always)
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO messages (name, email, message, created_at)
+            VALUES (%s, %s, %s, %s)
+            """,
+            (data["name"], data["email"], data["message"], datetime.now())
+        )
+        conn.commit()
+        cur.close()
+        release_db(conn)
 
-    resend.Emails.send({
-        "from": "ADAS Club <onboarding@resend.dev>",
-        "to": CLUB_EMAIL,
-        "reply_to": data["email"],
-        "subject": "New Contact Message",
-        "html": f"""
-        <p><b>Name:</b> {data['name']}</p>
-        <p><b>Email:</b> {data['email']}</p>
-        <p>{data['message']}</p>
-        """
-    })
+        # 2️⃣ Try sending email (optional)
+        try:
+            resend.Emails.send({
+                "from": "ADAS Club <onboarding@resend.dev>",
+                "to": CLUB_EMAIL,
+                "reply_to": data["email"],
+                "subject": "New Contact Message",
+                "html": f"""
+                    <p><b>Name:</b> {data['name']}</p>
+                    <p><b>Email:</b> {data['email']}</p>
+                    <p>{data['message']}</p>
+                """
+            })
+        except Exception as mail_error:
+            print("❌ Email sending failed:", mail_error)
 
-    return {"message": "Message sent"}
+        # 3️⃣ Always success response to frontend
+        return jsonify({"message": "Message sent successfully"}), 200
+
+    except Exception as e:
+        print("❌ Contact API error:", e)
+        return jsonify({"error": "Failed to send message"}), 500
 
 # ======================================================
 # RUN
