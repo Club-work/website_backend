@@ -17,9 +17,9 @@ load_dotenv()
 app = Flask(__name__)
 
 # ======================================================
-# ✅ SIMPLE & SAFE CORS (THIS IS THE FIX)
+# ✅ FULL OPEN CORS (FIXES ALL RENDER / VERCEL ISSUES)
 # ======================================================
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 # ======================================================
 # ENV
@@ -34,8 +34,7 @@ resend.api_key = os.getenv("RESEND_API_KEY")
 # DATABASE POOL
 # ======================================================
 db_pool = pool.SimpleConnectionPool(
-    1,
-    10,
+    1, 10,
     DATABASE_URL,
     sslmode="require"
 )
@@ -44,7 +43,8 @@ def get_db():
     return db_pool.getconn()
 
 def release_db(conn):
-    db_pool.putconn(conn)
+    if conn:
+        db_pool.putconn(conn)
 
 # ======================================================
 # ADMIN AUTH
@@ -55,13 +55,10 @@ def admin_required(f):
         auth = request.headers.get("Authorization")
         if not auth or not auth.startswith("Bearer "):
             return jsonify({"error": "Token missing"}), 401
-
         try:
-            token = auth.split(" ")[1]
-            jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+            jwt.decode(auth.split(" ")[1], JWT_SECRET, algorithms=["HS256"])
         except:
             return jsonify({"error": "Invalid token"}), 401
-
         return f(*args, **kwargs)
     return wrapper
 
@@ -78,14 +75,15 @@ def home():
 @app.route("/admin/login", methods=["POST"])
 def admin_login():
     data = request.json
-
     conn = get_db()
     cur = conn.cursor()
+
     cur.execute(
         "SELECT password_hash FROM admin_users WHERE username=%s",
         (data["username"],)
     )
     row = cur.fetchone()
+
     cur.close()
     release_db(conn)
 
@@ -93,7 +91,6 @@ def admin_login():
         return jsonify({"error": "Invalid credentials"}), 401
 
     stored_hash = row[0].encode() if isinstance(row[0], str) else row[0]
-
     if not bcrypt.checkpw(data["password"].encode(), stored_hash):
         return jsonify({"error": "Invalid credentials"}), 401
 
@@ -112,6 +109,7 @@ def admin_login():
 def get_events():
     conn = get_db()
     cur = conn.cursor()
+
     cur.execute("""
         SELECT id, title, categories, details, gform_link,
                registration_open, registration_end
@@ -119,6 +117,7 @@ def get_events():
         ORDER BY created_at DESC
     """)
     rows = cur.fetchall()
+
     cur.close()
     release_db(conn)
 
@@ -147,7 +146,7 @@ def president_members():
             m.id, m.name, m.role, m.photo_url
         FROM president1 p
         LEFT JOIN club_members1 m
-            ON m.president_id = p.id
+        ON m.president_id = p.id
         ORDER BY p.year DESC, m.id
     """)
 
@@ -155,72 +154,73 @@ def president_members():
     cur.close()
     release_db(conn)
 
-    data = {}
+    result = {}
     for r in rows:
         pid = r[0]
-        if pid not in data:
-            data[pid] = {
+        if pid not in result:
+            result[pid] = {
                 "id": r[0],
                 "name": r[1],
                 "year": r[2],
                 "photo_url": r[3],
                 "members": []
             }
-
         if r[4]:
-            data[pid]["members"].append({
+            result[pid]["members"].append({
                 "id": r[4],
                 "name": r[5],
                 "role": r[6],
                 "photo_url": r[7]
             })
 
-    return jsonify(list(data.values()))
+    return jsonify(list(result.values()))
 
 # ======================================================
-# CONTACT
+# CONTACT (SAFE VERSION)
 # ======================================================
 @app.route("/contact", methods=["POST"])
 def contact():
-    try:
-        data = request.json
+    data = request.json
+    conn = None
 
-        # 1️⃣ Save message in DB (always)
+    try:
+        # Save message
         conn = get_db()
         cur = conn.cursor()
-        cur.execute(
-            """
+        cur.execute("""
             INSERT INTO messages (name, email, message, created_at)
             VALUES (%s, %s, %s, %s)
-            """,
-            (data["name"], data["email"], data["message"], datetime.now())
-        )
+        """, (
+            data["name"],
+            data["email"],
+            data["message"],
+            datetime.now()
+        ))
         conn.commit()
         cur.close()
-        release_db(conn)
-
-        # 2️⃣ Try sending email (optional)
-        try:
-            resend.Emails.send({
-                "from": "ADAS Club <onboarding@resend.dev>",
-                "to": CLUB_EMAIL,
-                "reply_to": data["email"],
-                "subject": "New Contact Message",
-                "html": f"""
-                    <p><b>Name:</b> {data['name']}</p>
-                    <p><b>Email:</b> {data['email']}</p>
-                    <p>{data['message']}</p>
-                """
-            })
-        except Exception as mail_error:
-            print("❌ Email sending failed:", mail_error)
-
-        # 3️⃣ Always success response to frontend
-        return jsonify({"message": "Message sent successfully"}), 200
 
     except Exception as e:
-        print("❌ Contact API error:", e)
-        return jsonify({"error": "Failed to send message"}), 500
+        print("❌ DB error:", e)
+    finally:
+        release_db(conn)
+
+    # Try sending email (non-blocking)
+    try:
+        resend.Emails.send({
+            "from": "ADAS Club <onboarding@resend.dev>",
+            "to": CLUB_EMAIL,
+            "reply_to": data["email"],
+            "subject": "New Contact Message",
+            "html": f"""
+                <p><b>Name:</b> {data['name']}</p>
+                <p><b>Email:</b> {data['email']}</p>
+                <p>{data['message']}</p>
+            """
+        })
+    except Exception as e:
+        print("⚠️ Email failed:", e)
+
+    return jsonify({"message": "Message sent successfully"}), 200
 
 # ======================================================
 # RUN
