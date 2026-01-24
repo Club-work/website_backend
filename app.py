@@ -208,7 +208,7 @@ def contact():
     try:
         resend.Emails.send({
             "from": "ADAS Club <onboarding@resend.dev>",
-            "to": adasclubaurcm@gmail.com,
+            "to": "adasclubaurcm@gmail.com",
             "reply_to": data["email"],
             "subject": "New Contact Message",
             "html": f"""
