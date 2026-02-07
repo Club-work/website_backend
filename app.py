@@ -192,6 +192,33 @@ def delete_president(id):
     return {"message": "President deleted"}
 
 # ================= MEMBERS =================
+@app.route("/admin/members", methods=["GET"])
+@admin_required
+def get_members():
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT id, name, role, photo_url, president_id
+        FROM club_members1
+        ORDER BY id DESC
+    """)
+    rows = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    return jsonify([
+        {
+            "id": r[0],
+            "name": r[1],
+            "role": r[2],
+            "photo_url": r[3],
+            "president_id": r[4]
+        }
+        for r in rows
+    ])
+
 @app.route("/admin/members", methods=["POST"])
 @admin_required
 def add_member():
