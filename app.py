@@ -12,7 +12,7 @@ load_dotenv()
 app = Flask(__name__)
 
 # ================= CORS =================
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 # ================= ENV =================
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -21,7 +21,7 @@ CLUB_EMAIL = os.getenv("CLUB_EMAIL")
 PORT = int(os.getenv("PORT", 10000))
 resend.api_key = os.getenv("RESEND_API_KEY")
 
-# ================= DB (LAZY CONNECTION) =================
+# ================= DB =================
 def get_db():
     return psycopg2.connect(DATABASE_URL, sslmode="require")
 
@@ -29,8 +29,6 @@ def get_db():
 def admin_required(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
-
-        # 🔥 Allow preflight
         if request.method == "OPTIONS":
             return jsonify({"ok": True}), 200
 
@@ -63,7 +61,6 @@ def admin_login():
         (d["username"],)
     )
     row = cur.fetchone()
-
     cur.close()
     conn.close()
 
@@ -82,7 +79,7 @@ def admin_login():
 
     return jsonify({"token": token})
 
-# ================= EVENTS =================
+# ================= EVENTS (PUBLIC) =================
 @app.route("/events", methods=["GET"])
 def get_events():
     conn = get_db()
@@ -95,7 +92,6 @@ def get_events():
         ORDER BY created_at DESC
     """)
     rows = cur.fetchall()
-
     cur.close()
     conn.close()
 
@@ -109,7 +105,7 @@ def get_events():
         "gform_link": r[4] if r[5] else None
     } for r in rows])
 
-# ================= EVENTS ADMIN =================
+# ================= EVENTS (ADMIN CRUD) =================
 @app.route("/admin/events", methods=["POST"])
 @admin_required
 def add_event():
@@ -164,17 +160,57 @@ def delete_event(id):
     conn.close()
     return {"message": "Event deleted"}
 
-# ================= PRESIDENT =================
+# ================= PRESIDENT + MEMBERS (PUBLIC VIEW) =================
+@app.route("/president-members", methods=["GET"])
+def president_members():
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT p.id,p.name,p.year,p.photo_url,
+               m.id,m.name,m.role,m.photo_url
+        FROM president1 p
+        LEFT JOIN club_members1 m ON m.president_id=p.id
+        ORDER BY p.year DESC, m.id
+    """)
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    data = {}
+    for r in rows:
+        pid = r[0]
+        if pid not in data:
+            data[pid] = {
+                "id": r[0],
+                "name": r[1],
+                "year": r[2],
+                "photo_url": r[3],
+                "members": []
+            }
+        if r[4]:
+            data[pid]["members"].append({
+                "id": r[4],
+                "name": r[5],
+                "role": r[6],
+                "photo_url": r[7]
+            })
+
+    return jsonify(list(data.values()))
+
+# ================= PRESIDENT (ADMIN CRUD) =================
 @app.route("/admin/president", methods=["POST"])
 @admin_required
 def add_president():
     d = request.json
     conn = get_db()
     cur = conn.cursor()
+
     cur.execute(
         "INSERT INTO president1 (name,year,photo_url) VALUES (%s,%s,%s)",
         (d["name"], d["year"], d["photo_url"])
     )
+
     conn.commit()
     cur.close()
     conn.close()
@@ -191,7 +227,7 @@ def delete_president(id):
     conn.close()
     return {"message": "President deleted"}
 
-# ================= MEMBERS =================
+# ================= MEMBERS (ADMIN CRUD) =================
 @app.route("/admin/members", methods=["GET"])
 @admin_required
 def get_members():
@@ -199,25 +235,21 @@ def get_members():
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT id, name, role, photo_url, president_id
+        SELECT id,name,role,photo_url,president_id
         FROM club_members1
         ORDER BY id DESC
     """)
     rows = cur.fetchall()
-
     cur.close()
     conn.close()
 
-    return jsonify([
-        {
-            "id": r[0],
-            "name": r[1],
-            "role": r[2],
-            "photo_url": r[3],
-            "president_id": r[4]
-        }
-        for r in rows
-    ])
+    return jsonify([{
+        "id": r[0],
+        "name": r[1],
+        "role": r[2],
+        "photo_url": r[3],
+        "president_id": r[4]
+    } for r in rows])
 
 @app.route("/admin/members", methods=["POST"])
 @admin_required
@@ -225,10 +257,12 @@ def add_member():
     d = request.json
     conn = get_db()
     cur = conn.cursor()
+
     cur.execute("""
         INSERT INTO club_members1 (name,role,photo_url,president_id)
         VALUES (%s,%s,%s,%s)
     """, (d["name"], d["role"], d["photo_url"], d["president_id"]))
+
     conn.commit()
     cur.close()
     conn.close()
@@ -243,24 +277,14 @@ def update_member(id):
 
     cur.execute("""
         UPDATE club_members1 SET
-            name=%s,
-            role=%s,
-            photo_url=%s,
-            president_id=%s
+        name=%s,role=%s,photo_url=%s,president_id=%s
         WHERE id=%s
-    """, (
-        d["name"],
-        d["role"],
-        d["photo_url"],
-        d["president_id"],
-        id
-    ))
+    """, (d["name"], d["role"], d["photo_url"], d["president_id"], id))
 
     conn.commit()
     cur.close()
     conn.close()
-
-    return jsonify({"message": "Member updated successfully"})
+    return {"message": "Member updated"}
 
 @app.route("/admin/members/<int:id>", methods=["DELETE"])
 @admin_required
@@ -284,8 +308,8 @@ def contact():
         INSERT INTO messages (name,email,message,created_at)
         VALUES (%s,%s,%s,%s)
     """, (d["name"], d["email"], d["message"], datetime.now()))
-    conn.commit()
 
+    conn.commit()
     cur.close()
     conn.close()
 
