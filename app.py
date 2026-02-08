@@ -234,6 +234,34 @@ def add_member():
     conn.close()
     return {"message": "Member added"}
 
+@app.route("/admin/members/<int:id>", methods=["PUT"])
+@admin_required
+def update_member(id):
+    d = request.json
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("""
+        UPDATE club_members1 SET
+            name=%s,
+            role=%s,
+            photo_url=%s,
+            president_id=%s
+        WHERE id=%s
+    """, (
+        d["name"],
+        d["role"],
+        d["photo_url"],
+        d["president_id"],
+        id
+    ))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    return jsonify({"message": "Member updated successfully"})
+
 @app.route("/admin/members/<int:id>", methods=["DELETE"])
 @admin_required
 def delete_member(id):
