@@ -7,12 +7,16 @@ from dotenv import load_dotenv
 from datetime import datetime, timedelta
 import resend
 
+# ================= LOAD ENV =================
 
 load_dotenv()
 app = Flask(**name**)
 
+# ================= CORS =================
 
 CORS(app, origins=["https://adas-4n66.onrender.com"])
+
+# ================= ENV =================
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 JWT_SECRET = os.getenv("JWT_SECRET")
@@ -20,6 +24,7 @@ CLUB_EMAIL = os.getenv("CLUB_EMAIL")
 PORT = int(os.getenv("PORT", 10000))
 resend.api_key = os.getenv("RESEND_API_KEY")
 
+# ================= DB =================
 
 def get_db():
 conn = psycopg2.connect(
@@ -31,15 +36,18 @@ application_name="adas_api"
 conn.autocommit = True
 return conn
 
+# ================= ADMIN AUTH =================
 
 def admin_required(f):
 @wraps(f)
 def wrapper(*args, **kwargs):
-if request.method == "OPTIONS":
-return jsonify({"ok": True}), 200
 
+```
+    if request.method == "OPTIONS":
+        return jsonify({"ok": True}), 200
 
     auth = request.headers.get("Authorization")
+
     if not auth or not auth.startswith("Bearer "):
         return jsonify({"error": "Token missing"}), 401
 
@@ -49,26 +57,31 @@ return jsonify({"ok": True}), 200
         return jsonify({"error": "Invalid token"}), 401
 
     return f(*args, **kwargs)
+
 return wrapper
+```
 
-
+# ================= HEALTH =================
 
 @app.route("/")
 def home():
 return {"status": "ADAS Club API running"}
 
+# ================= ADMIN LOGIN =================
 
 @app.route("/admin/login", methods=["POST"])
 def admin_login():
+
+```
 d = request.json
 conn = get_db()
 cur = conn.cursor()
-
 
 cur.execute(
     "SELECT password_hash FROM admin_users WHERE username=%s",
     (d["username"],)
 )
+
 row = cur.fetchone()
 
 cur.close()
@@ -89,11 +102,14 @@ token = jwt.encode(
 )
 
 return jsonify({"token": token})
+```
 
-
+# ================= EVENTS =================
 
 @app.route("/events", methods=["GET"])
 def get_events():
+
+```
 conn = get_db()
 cur = conn.cursor()
 
@@ -103,6 +119,7 @@ cur.execute("""
     FROM events
     ORDER BY created_at DESC
 """)
+
 rows = cur.fetchall() or []
 
 cur.close()
@@ -118,11 +135,15 @@ return jsonify([{
     "register": r[5] and (r[6] is None or r[6] > now),
     "gform_link": r[4] if r[5] else None
 } for r in rows])
+```
 
+# ================= ADD EVENT =================
 
 @app.route("/admin/events", methods=["POST"])
 @admin_required
 def add_event():
+
+```
 d = request.json
 conn = get_db()
 cur = conn.cursor()
@@ -140,11 +161,15 @@ cur.close()
 conn.close()
 
 return {"message": "Event added"}
+```
 
+# ================= UPDATE EVENT =================
 
 @app.route("/admin/events/[int:id](int:id)", methods=["PUT"])
 @admin_required
 def update_event(id):
+
+```
 d = request.json
 conn = get_db()
 cur = conn.cursor()
@@ -163,11 +188,15 @@ cur.close()
 conn.close()
 
 return {"message": "Event updated"}
+```
 
+# ================= DELETE EVENT =================
 
 @app.route("/admin/events/[int:id](int:id)", methods=["DELETE"])
 @admin_required
 def delete_event(id):
+
+```
 conn = get_db()
 cur = conn.cursor()
 
@@ -177,11 +206,14 @@ cur.close()
 conn.close()
 
 return {"message": "Event deleted"}
+```
 
-
+# ================= PRESIDENT + MEMBERS =================
 
 @app.route("/president-members", methods=["GET"])
 def president_members():
+
+```
 conn = get_db()
 cur = conn.cursor()
 
@@ -201,6 +233,7 @@ conn.close()
 data = {}
 
 for r in rows:
+
     pid = r[0]
 
     if pid not in data:
@@ -221,120 +254,14 @@ for r in rows:
         })
 
 return jsonify(list(data.values()))
+```
 
-
-
-@app.route("/admin/president", methods=["POST"])
-@admin_required
-def add_president():
-d = request.json
-conn = get_db()
-cur = conn.cursor()
-
-cur.execute(
-    "INSERT INTO president1 (name,year,photo_url) VALUES (%s,%s,%s)",
-    (d["name"], d["year"], d["photo_url"])
-)
-
-cur.close()
-conn.close()
-
-return {"message": "President added"}
-
-
-@app.route("/admin/president/[int:id](int:id)", methods=["DELETE"])
-@admin_required
-def delete_president(id):
-conn = get_db()
-cur = conn.cursor()
-
-cur.execute("DELETE FROM president1 WHERE id=%s", (id,))
-
-cur.close()
-conn.close()
-
-return {"message": "President deleted"}
-
-
-
-@app.route("/admin/members", methods=["GET"])
-@admin_required
-def get_members():
-conn = get_db()
-cur = conn.cursor()
-
-cur.execute("""
-    SELECT id,name,role,photo_url,president_id
-    FROM club_members1
-    ORDER BY id DESC
-""")
-
-rows = cur.fetchall() or []
-
-cur.close()
-conn.close()
-
-return jsonify([{
-    "id": r[0],
-    "name": r[1],
-    "role": r[2],
-    "photo_url": r[3],
-    "president_id": r[4]
-} for r in rows])
-
-
-@app.route("/admin/members", methods=["POST"])
-@admin_required
-def add_member():
-d = request.json
-conn = get_db()
-cur = conn.cursor()
-
-cur.execute("""
-    INSERT INTO club_members1 (name,role,photo_url,president_id)
-    VALUES (%s,%s,%s,%s)
-""", (d["name"], d["role"], d["photo_url"], d["president_id"]))
-
-cur.close()
-conn.close()
-
-return {"message": "Member added"}
-
-
-@app.route("/admin/members/[int:id](int:id)", methods=["PUT"])
-@admin_required
-def update_member(id):
-d = request.json
-conn = get_db()
-cur = conn.cursor()
-
-cur.execute("""
-    UPDATE club_members1 SET
-    name=%s,role=%s,photo_url=%s,president_id=%s
-    WHERE id=%s
-""", (d["name"], d["role"], d["photo_url"], d["president_id"], id))
-
-cur.close()
-conn.close()
-
-return {"message": "Member updated"}
-
-@app.route("/admin/members/[int:id](int:id)", methods=["DELETE"])
-@admin_required
-def delete_member(id):
-conn = get_db()
-cur = conn.cursor()
-
-cur.execute("DELETE FROM club_members1 WHERE id=%s", (id,))
-
-cur.close()
-conn.close()
-
-return {"message": "Member deleted"}
-
+# ================= CONTACT =================
 
 @app.route("/contact", methods=["POST"])
 def contact():
+
+```
 d = request.json
 conn = get_db()
 cur = conn.cursor()
@@ -359,7 +286,9 @@ except:
     pass
 
 return {"message": "Message sent"}
+```
 
+# ================= RUN =================
 
 if **name** == "**main**":
 app.run(host="0.0.0.0", port=PORT)
